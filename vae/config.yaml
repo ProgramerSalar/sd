@@ -1,0 +1,53 @@
+data:
+  dataset:
+    image_folder: "E:\\YouTube\\stable-diffusion\\dataset\\cat_dog_images"
+    image_size: [256, 256]
+    extension: [".jpg", ".jpeg", ".png", ".bmp"]
+
+
+  dataloader:
+    batch_size: 2 
+    shuffle: True 
+    num_workers: 4 
+
+  transform: 
+    normalize_mean: [0.5]
+    normalize_std: [0.5]
+    random_flip: True 
+
+
+
+model:
+  base_learning_rate: 4.5e-06
+  target: vae.autoencoder.AutoencoderKL
+  params:
+    monitor: val/rec_loss 
+    embed_dim: 16 
+
+    lossconfig:
+      target: vae.loss.LPIPSWithDiscriminator
+      params:
+        disc_start: 50001
+        kl_weight: 1.0e-06
+        disc_weight: 0.5 
+
+    ddconfig: 
+      double_z: True
+      z_channels: 4
+      resolution: 256 
+      in_channels: 3 
+      out_ch: 3 
+      ch: 128 
+      ch_mult:
+      - 1
+      - 2 
+      - 4
+      - 8
+      num_res_blocks: 2 
+      attn_resolution: 
+      - 16 
+      dropout: 0.0 
+
+
+
+

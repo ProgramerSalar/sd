@@ -1,0 +1,51 @@
+model:
+  base_learning_rate: 4.5e-06
+  target: VQ.autoencoder.VQModel
+  params:
+    embed_dim: 8 
+    n_embed: 16383 
+    ddconfig: 
+      double_z: False 
+      z_channels: 8 
+      resolution: 256 
+      in_channels: 3 
+      out_ch: 3 
+      ch: 128 
+      ch_mult: 
+        - 1
+        - 1
+        - 2
+        - 2
+        - 4
+      num_res_blocks: 2 
+      attn_resolution: 
+        - 16 
+      dropout: 0.0 
+    lossconfig:
+      target: VQ.vqlpips.VQLPIPSWithDiscriminator
+      params:
+        disc_conditional: False 
+        disc_in_channel: 3 
+        disc_start: 250001 
+        disc_weight: 0.75 
+        disc_num_layers: 2 
+        codebook_weight: 1.0 
+
+
+data:
+  dataset:
+    image_folder: "E:\\YouTube\\stable-diffusion\\dataset\\cat_dog_images"
+    image_size: [256, 256]
+    extension: [".jpg", ".jpeg", ".png", ".bmp"]
+
+
+  dataloader:
+    batch_size: 2 
+    shuffle: True 
+    num_workers: 4 
+
+  transform: 
+    normalize_mean: [0.5]
+    normalize_std: [0.5]
+    random_flip: True 
+
