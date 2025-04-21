@@ -19,9 +19,11 @@ from vae.distribution import DiagonalGaussianDistribution
 from pytorch_lightning.utilities.rank_zero import rank_zero_only
 from vae.autoencoder import IdentityFirstStage
 from torch.optim.lr_scheduler import LambdaLR
+import os 
 
 
-
+# Set environment variable to reduce memory fragmentation
+os.environ['PYTORCH_CUDA_ALLOC_CONF'] = 'expandable_segments:True'
 
 __conditioning_keys__ = {'concat': 'c_concat',
                          'crossattn': 'c_crossattn',
@@ -40,7 +42,9 @@ def uniform_on_device(r1, r2, shape, device):
 class DiffusionWrapper(pl.LightningModule):
     def __init__(self, diff_model_config, conditioning_key):
         super().__init__()
-        self.diffusion_model = instantiate_from_config(diff_model_config)
+        base_model = instantiate_from_config(diff_model_config)
+        self.diffusion_model = UNetModelWithCheckpointing(base_model)
+
         self.conditioning_key = conditioning_key
         assert self.conditioning_key in [None, 'concat', 'crossattn', 'hybrid', 'adm']
 
@@ -70,6 +74,29 @@ class DiffusionWrapper(pl.LightningModule):
 
         return out
 
+# Alternative manual gradient checkpointing implementation
+from torch.utils.checkpoint import checkpoint
+from ldm.models.openaimodel import UNetModel
+
+class UNetModelWithCheckpointing(nn.Module):
+    def __init__(self, *args, **kwargs):
+        super().__init__()
+        self.model = UNetModel(
+            in_channels=3,      # RGB images 
+            model_channels=224,  # Base channel count
+            out_channels=3,     # Same as input for diffusion
+            num_res_blocks=2,   # 3 residual blocks per level 
+            attention_resolutions=[8, 4, 2],  # Apply attention at 8x8 and 16x16
+            image_size=256,
+            num_heads=4,                    # 4 attention heads 
+            # use_checkpoint=False,  
+        )  # Your original UNet model
+        self.use_checkpoint = True
+        
+    def forward(self, x, t, **kwargs):
+        if self.use_checkpoint and self.training:
+            return checkpoint(self.model.forward, x, t, **kwargs, use_reentrant=False)
+        return self.model(x, t, **kwargs)
 
 
 class DDPM(pl.LightningModule):
@@ -144,6 +171,23 @@ class DDPM(pl.LightningModule):
         self.logvar = torch.full(fill_value=logvar_init, size=(self.num_timesteps,))
         if self.learn_logvar:
             self.logvar = nn.Parameter(self.logvar, requires_grad=True)
+
+
+        if hasattr(self.model.diffusion_model, 'enable_gradient_checkpointing'):
+            self.model.diffusion_model.enable_gradient_checkpointing()
+
+        else:
+            print("Warning: Gradient checkpointing not available for this model.")
+
+        # print(f"check the diffusion model have found the checkpoint gradiant: {self.model.diffusion_model}")
+
+
+        # # Enable gradient checkpointing to save memory
+        # self.model.diffusion_model.enable_gradient_checkpointing()
+
+
+
+
 
 
     def register_schedule(self, given_betas=None, beta_schedule="linear", timesteps=1000,
@@ -484,18 +528,23 @@ if __name__ == "__main__":
     from pytorch_lightning import Trainer
     
 
+    # Clear GPU cache before starting
+    torch.cuda.empty_cache()
+    
+
 
     # Prepare Dataset 
-    config = "E:\\YouTube\\stable-diffusion\ldm\\config.yaml"
+    config = "E:\\YouTube\\Git\ldm\\config.yaml"
+    # config = "/content/sd/ldm/config.yaml"
     config = load_config(config_path=config)
     # print("COnfig: ", config)
     
-    train_dataset = ImageDataset(root_dir="E:\\YouTube\\stable-diffusion\\dataset\\cat_dog_images",
+    train_dataset = ImageDataset(root_dir="E:\\YouTube\\Git\\dataset\\cat_dog_images",
                                 split="train",
                                 image_size=256)
     
 
-    val_dataset = ImageDataset(root_dir="E:\\YouTube\\stable-diffusion\\dataset\\cat_dog_images",
+    val_dataset = ImageDataset(root_dir="E:\\YouTube\\Git\\dataset\\cat_dog_images",
                                 split="val",
                                 image_size=256)
     
@@ -510,7 +559,8 @@ if __name__ == "__main__":
 
     # Initialize model 
     model = DDPM(
-                unet_config=config['model']['params']['unet_config']
+                unet_config=config['model']['params']['unet_config'],
+                use_ema=False 
                             )
     model = model.to("cuda")
     print(model)
@@ -537,9 +587,17 @@ if __name__ == "__main__":
         log_every_n_steps=1,
         check_val_every_n_epoch=1,
         enable_progress_bar=True,
-        precision=32,  # Can use '16-mixed' for FP16
-        accumulate_grad_batches=1
+        precision="16-mixed",  # Can use '16-mixed' for FP16
+        accumulate_grad_batches=1,
+        # pin_memory=True,
+        # num_workers=4,
+        # persistent_workers=True
     )
+
+    # Add memory management at the start of training
+    torch.cuda.empty_cache()
+    torch.backends.cudnn.benchmark = True  # Enable cuDNN auto-tuner
+    torch.backends.cuda.enable_flash_sdp(True)  # Enable FlashAttention if available
 
     # Training 
     trainer.fit(model, train_datloader, val_datloader)

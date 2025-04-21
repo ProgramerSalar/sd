@@ -140,62 +140,7 @@ class Upsample(nn.Module):
         return x 
 
         
-    
-# class Upsample(nn.Module):
-
-#     """ 
-#     An upsampling layer with an optional conv.
-#     :param channels: channels in the inputs and outputs.
-#     :param use_conv: a bool determining if a conv is applied.
-#     :param dims: determines if the signal is 1D, 2D, or 3D if 3D, then 
-#                 upsampling occures in the inner-two dims
-#     """
-
-#     def __init__(self,
-#                  channels,
-#                  use_conv,
-#                  dims=2,
-#                  out_channels=None,
-#                  padding=1):
-#         super().__init__()
-#         self.channels = channels
-#         self.out_channels = out_channels or channels
-#         self.use_conv = use_conv
-#         self.dims = dims 
-
-#         if use_conv:
-#             # Add padding options for size matching
-#             self.conv = conv_nd(dims, self.channels, self.out_channels, 3, padding)
-
-        
-
-
-#     def forward(self, x, output_size=None):
-#         # assert x.shape[1] == self.channels
-#         # if self.dims == 3:
-#         #     x = torch.nn.functional.interpolate(
-#         #         input=x,
-#         #         size = (x.shape[2], x.shape[3] * 2, x.shape[4] * 2),
-#         #         mode="nearest"
-                
-#         #     )
-
-#         if output_size is None:
-#             scale_factor = 2 if self.dims != 3 else (1, 2, 2)
-#             x = torch.nn.functional.interpolate(x, scale_factor=scale_factor, mode="nearest")
-
-
-
-#         else:
-#             x = torch.nn.functional.interpolate(input=x,
-#                                                 size=output_size,
-#                                                 mode="nearest")
-            
-#         if self.use_conv:
-#             x = self.conv(x)
-
-#         return x 
-    
+ 
 
 
 class Downsample(nn.Module):
