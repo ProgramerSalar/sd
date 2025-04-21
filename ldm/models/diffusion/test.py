@@ -537,14 +537,18 @@ if __name__ == "__main__":
     config = "E:\\YouTube\\Git\ldm\\config.yaml"
     # config = "/content/sd/ldm/config.yaml"
     config = load_config(config_path=config)
+    root_dir = "/content/sd/dataset/cat_dog_images"
+    root_dir = "E:\\YouTube\\Git\\dataset\\cat_dog_images"
     # print("COnfig: ", config)
     
-    train_dataset = ImageDataset(root_dir="E:\\YouTube\\Git\\dataset\\cat_dog_images",
+    
+    train_dataset = ImageDataset(
+                                root_dir=root_dir,
                                 split="train",
                                 image_size=256)
     
 
-    val_dataset = ImageDataset(root_dir="E:\\YouTube\\Git\\dataset\\cat_dog_images",
+    val_dataset = ImageDataset(root_dir=root_dir,
                                 split="val",
                                 image_size=256)
     
