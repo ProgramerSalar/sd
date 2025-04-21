@@ -65,6 +65,8 @@ class CheckpointFunction(torch.autograd.Function):
             Tuple of gradients (None for run_function and length, then input grads)
         """
 
+        print(f"check the data of dtype : {ctx}")
+
         # Prepare input tensors for gradient computation
         ctx.input_tensors = [x.detach().requires_grad_(True) for x in ctx.input_tensors]
 
@@ -72,6 +74,7 @@ class CheckpointFunction(torch.autograd.Function):
         with torch.enable_grad():
             # Create shallow copies to avoid modifying original tensors
             shallow_copies = [x.view_as(x) for x in ctx.input_tensors]
+            print(f"Shadown copies of data: {shallow_copies}")
             output_tensors = ctx.run_function(*shallow_copies)
 
         

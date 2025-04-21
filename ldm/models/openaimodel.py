@@ -490,6 +490,11 @@ class AttentionBlock(nn.Module):
         self.use_checkpoint = use_checkpoint
         self.norm = normalization(channels)
         self.qkv = conv_nd(1, channels, channels * 3, 1)
+        # self.qkv.weight = nn.Parameter(self.qkv.weight.half())  # Weights in float16
+        # if self.qkv.bias is not None:
+        #     self.qkv.bias = nn.Parameter(self.qkv.bias.float())  # Biases in float32
+
+
 
         if use_new_attention_order:
             # split qkv before split heads 
@@ -502,12 +507,35 @@ class AttentionBlock(nn.Module):
 
 
     def forward(self, x):
-        return checkpoint(self._forward, (x,), self.parameters(), True)
+        # if x.dtype == torch.float16:
+        #     # Convert input to float32 for attention operations
+        #     with torch.cuda.amp.autocast(enabled=False):
+        #         x_float = x.float()
+        #         out = checkpoint(self._forward, (x_float,), self.parameters(), self.use_checkpoint)
+        #         return out.half()
+        # return checkpoint(self._forward, (x,), self.parameters(), self.use_checkpoint)
+
+        if self.training and torch.is_autocast_cache_enabled():
+            # Convert weights to match input type during mixed precision 
+            with torch.cuda.amp.autocast(enabled=False):
+                x = x.float()
+                self.qkv.weight.data = self.qkv.weight.data.float()
+                if self.qkv.bias is not None:
+                    self.qkv.bias.data = self.qkv.bias.data.float()
+
+
+                h = checkpoint(self._forward, (x,), self.parameters(), self.use_checkpoint)
+                return h.to(x.dtype)
+            
+        return checkpoint(self._forward, (x,), self.parameters(), self.use_checkpoint)
     
+
+
 
     def _forward(self, x):
         b, c, *spatial = x.shape 
         x = x.reshape(b, c, -1)
+        print("check the dtype :", x)
         qkv = self.qkv(self.norm(x))
         h = self.attention(qkv)
         h = self.proj_out(h)
@@ -620,6 +648,16 @@ class UNetModel(nn.Module):
 
         if num_head_channels == -1:
             assert num_heads != -1, "Must be specify either num_heads or num_head_channels"
+
+        # Convert model to half precision but keep certain layers in float32
+        self.half()  # Convert all parameters to float16
+        
+        # Ensure normalization layers and certain operations stay in float32
+        for module in self.modules():
+            if isinstance(module, (nn.GroupNorm, nn.LayerNorm)):
+                module.float()  # Normalization layers work better in float32
+            if hasattr(module, 'bias') and module.bias is not None:
+                module.bias = nn.Parameter(module.bias.float())  # Keep biases in float32
 
 
         # Store model configuration 
