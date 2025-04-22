@@ -206,11 +206,11 @@ class DDPM(pl.LightningModule):
                 module.float()  # Keep normalization in float32
 
 
-        if hasattr(self.model.diffusion_model, 'enable_gradient_checkpointing'):
-            self.model.diffusion_model.enable_gradient_checkpointing()
+        # if hasattr(self.model.diffusion_model, 'enable_gradient_checkpointing'):
+        #     self.model.diffusion_model.enable_gradient_checkpointing()
 
-        else:
-            print("Warning: Gradient checkpointing not available for this model.")
+        # else:
+        #     print("Warning: Gradient checkpointing not available for this model.")
 
         # print(f"check the diffusion model have found the checkpoint gradiant: {self.model.diffusion_model}")
 
@@ -643,7 +643,7 @@ if __name__ == "__main__":
         # pin_memory=True,
         # num_workers=4,
         # persistent_workers=True
-        gradient_clip_val=0.5,  # Reduced from 1.0
+        # gradient_clip_val=0.5,  # Reduced from 1.0
         # accumulate_grad_batches=4,  # Increased accumulation
         # enable_progress_bar=True,
         enable_model_summary=False,
