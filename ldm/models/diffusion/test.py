@@ -530,6 +530,10 @@ if __name__ == "__main__":
 
     # Clear GPU cache before starting
     torch.cuda.empty_cache()
+
+    import os
+    os.environ['PYTORCH_CUDA_ALLOC_CONF'] = 'expandable_segments:True,garbage_collection_threshold:0.8'
+
     
 
 
@@ -541,7 +545,7 @@ if __name__ == "__main__":
     root_dir = "E:\\YouTube\\Git\\dataset\\cat_dog_images"
     # print("COnfig: ", config)
     
-    
+
     train_dataset = ImageDataset(
                                 root_dir=root_dir,
                                 split="train",
@@ -596,6 +600,15 @@ if __name__ == "__main__":
         # pin_memory=True,
         # num_workers=4,
         # persistent_workers=True
+        gradient_clip_val=0.5,  # Reduced from 1.0
+        # accumulate_grad_batches=4,  # Increased accumulation
+        # enable_progress_bar=True,
+        enable_model_summary=False,
+        limit_train_batches=0.1,  # Train on 10% of data initially
+        limit_val_batches=0.1,    # Validate on 10% of data initially
+        deterministic=True,       # For reproducibility
+        # amp_backend='native',
+        strategy='ddp_find_unused_parameters_false'  # More efficient distributed training
     )
 
     # Add memory management at the start of training

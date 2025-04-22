@@ -7,6 +7,37 @@ from ldm.models.utils import conv_nd, normalization, avg_pool_nd, checkpoint, ti
 import math 
 import numpy as np 
 
+
+class MemoryOptimizedAttentionBlock(nn.Module):
+    def __init__(self, channels, num_heads=1, num_head_channels=-1, use_checkpoint=True):
+        super().__init__()
+        self.use_checkpoint = use_checkpoint
+        self.attention = AttentionBlock(channels, num_heads, num_head_channels)
+        
+    def forward(self, x):
+        if self.use_checkpoint:
+            return checkpoint(self.attention, x, use_reentrant=False)
+        return self.attention(x)
+
+class MemoryEfficientUNet(nn.Module):
+    def __init__(self, *args, **kwargs):
+        super().__init__()
+        # Replace all attention blocks with memory-optimized versions
+        self.attention_blocks = nn.ModuleList([
+            MemoryOptimizedAttentionBlock(channels=ch) 
+            for ch in [256, 512, 1024]  # Adjust channels as needed
+        ])
+        
+    def forward(self, x, t):
+        # Manual mixed precision handling
+        with torch.autocast(device_type='cuda', dtype=torch.float16):
+            # Your existing forward logic
+            for block in self.attention_blocks:
+                x = block(x)
+            return x
+
+
+
 class TimestepBlock(nn.Module):
 
     """
@@ -199,57 +230,7 @@ class Downsample(nn.Module):
 
         
         
-        
-# class Downsample(nn.Module):
 
-#     """ 
-#     A downsampling layer with optional conv.
-#     :param channels: channels in inputs and outputs.
-#     :params use_conv: a bool determining if conv is applied.
-#     :param dims: determines if the signal is 1D, 2D or 3D if 3D then 
-#                 downsampling occurs in the inner-two dims.
-#     """
-
-#     def __init__(self, 
-#                  channels,
-#                  use_conv,
-#                  dims=2,
-#                  out_channels=None,
-#                  padding=1):
-#         super().__init__()
-#         self.channels = channels
-#         self.out_channels = out_channels or channels
-#         self.use_conv = use_conv
-#         self.dims = dims 
-#         stride = 2 if dims != 3 else (1, 2, 2)
-
-#         if use_conv:
-#             self.conv = conv_nd(
-#                 self.dims, self.channels, self.out_channels, 3, stride=stride, padding=padding
-#             )
-
-#         else:
-#             # assert self.channels == self.out_channels
-#             # self.pool = avg_pool_nd(dims, kernel_size=stride, stride=stride)
-#             self.pool = nn.AvgPool2d(kernel_size=2, stride=2)
-
-
-#     def forward(self, x):
-#         # assert x.shape[1] == self.channels
-#         # return self.op(x)
-
-#         # Handle odd dimension by adding padding 
-#         if x.shape[-1] % 2 != 0 or x.shape[-2] % 2 != 0:
-#             x = nn.functional.pad(x, (0, 1, 0, 1), mode="constant")
-
-
-#         if self.use_conv:
-#             return self.conv(x)
-        
-#         else:
-#             return self.pool(x)
-
-        
     
 
 
