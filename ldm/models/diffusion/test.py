@@ -42,8 +42,7 @@ def uniform_on_device(r1, r2, shape, device):
 class DiffusionWrapper(pl.LightningModule):
     def __init__(self, diff_model_config, conditioning_key):
         super().__init__()
-        base_model = instantiate_from_config(diff_model_config)
-        self.diffusion_model = UNetModelWithCheckpointing(base_model)
+        
 
         self.conditioning_key = conditioning_key
         assert self.conditioning_key in [None, 'concat', 'crossattn', 'hybrid', 'adm']
@@ -78,25 +77,44 @@ class DiffusionWrapper(pl.LightningModule):
 from torch.utils.checkpoint import checkpoint
 from ldm.models.openaimodel import UNetModel
 
-class UNetModelWithCheckpointing(nn.Module):
-    def __init__(self, *args, **kwargs):
+class MemoryOptimizedUNet(nn.Module):
+    def __init__(self, base_model):
         super().__init__()
-        self.model = UNetModel(
-            in_channels=3,      # RGB images 
-            model_channels=224,  # Base channel count
-            out_channels=3,     # Same as input for diffusion
-            num_res_blocks=2,   # 3 residual blocks per level 
-            attention_resolutions=[8, 4, 2],  # Apply attention at 8x8 and 16x16
-            image_size=256,
-            num_heads=4,                    # 4 attention heads 
-            # use_checkpoint=False,  
-        )  # Your original UNet model
+        self.model = base_model
         self.use_checkpoint = True
         
+        # Convert model to half precision but keep normalization in float32
+        self.half()
+        for m in self.modules():
+            if isinstance(m, (nn.GroupNorm, nn.LayerNorm, nn.BatchNorm2d)):
+                m.float()
+    
     def forward(self, x, t, **kwargs):
+        # Ensure input dtype matches model dtype
+        input_dtype = x.dtype
+        model_dtype = next(self.parameters()).dtype
+        
+        if input_dtype != model_dtype:
+            x = x.to(model_dtype)
+        
         if self.use_checkpoint and self.training:
-            return checkpoint(self.model.forward, x, t, **kwargs, use_reentrant=False)
-        return self.model(x, t, **kwargs)
+            def create_custom_forward():
+                def custom_forward(*inputs):
+                    with torch.autocast(device_type='cuda', dtype=torch.float16):
+                        return self._forward(*inputs)
+                return custom_forward
+            
+            out = checkpoint(create_custom_forward(), x, t, **kwargs, 
+                           use_reentrant=False,
+                           preserve_rng_state=False)
+        else:
+            out = self._forward(x, t, **kwargs)
+        
+        return out.to(input_dtype)
+    
+    
+    
+
 
 
 class DDPM(pl.LightningModule):
@@ -131,6 +149,15 @@ class DDPM(pl.LightningModule):
                  logvar_init=0.,
                  ):
         super().__init__()
+
+        base_model = instantiate_from_config(unet_config)
+        self.model = DiffusionWrapper(MemoryOptimizedUNet(base_model), conditioning_key)
+        
+        # Configure automatic mixed precision
+        self.automatic_optimization = False  # Manual optimization for better control
+
+
+
         assert parameterization in ["eps", "x0"], 'currently only supporting "eps" and "x0"'
         self.parameterization = parameterization
         print(f"{self.__class__.__name__}: Running in {self.parameterization}-prediction mode")
@@ -171,6 +198,12 @@ class DDPM(pl.LightningModule):
         self.logvar = torch.full(fill_value=logvar_init, size=(self.num_timesteps,))
         if self.learn_logvar:
             self.logvar = nn.Parameter(self.logvar, requires_grad=True)
+
+        # Add these memory optimizations
+        self.model.half()  # Convert model to half precision
+        for module in self.model.modules():
+            if isinstance(module, (nn.BatchNorm2d, nn.LayerNorm)):
+                module.float()  # Keep normalization in float32
 
 
         if hasattr(self.model.diffusion_model, 'enable_gradient_checkpointing'):
@@ -428,17 +461,19 @@ class DDPM(pl.LightningModule):
         return loss, loss_dict
 
     def training_step(self, batch, batch_idx):
-        loss, loss_dict = self.shared_step(batch)
-
-        self.log_dict(loss_dict, prog_bar=True,
-                      logger=True, on_step=True, on_epoch=True)
-
-        self.log("global_step", self.global_step,
-                 prog_bar=True, logger=True, on_step=True, on_epoch=False)
-
-        if self.use_scheduler:
-            lr = self.optimizers().param_groups[0]['lr']
-            self.log('lr_abs', lr, prog_bar=True, logger=True, on_step=True, on_epoch=False)
+        optimizer = self.optimizers()
+        
+        # Manual optimization with mixed precision
+        with torch.autocast(device_type='cuda', dtype=torch.float16):
+            loss, loss_dict = self.shared_step(batch)
+        
+        # Manual backward and optimization
+        optimizer.zero_grad()
+        self.manual_backward(loss)
+        optimizer.step()
+        
+        self.log_dict(loss_dict, prog_bar=True)
+        return loss
 
         return loss
 
@@ -505,12 +540,9 @@ class DDPM(pl.LightningModule):
         return log
 
     def configure_optimizers(self):
-        lr = self.learning_rate
-        params = list(self.model.parameters())
-        if self.learn_logvar:
-            params = params + [self.logvar]
-        opt = torch.optim.AdamW(params, lr=lr)
-        return opt
+        # Ensure optimizer works with mixed precision
+        optimizer = torch.optim.AdamW(self.parameters(), lr=self.learning_rate)
+        return optimizer
     
 
 
@@ -528,12 +560,14 @@ if __name__ == "__main__":
     from pytorch_lightning import Trainer
     
 
-    # Clear GPU cache before starting
     torch.cuda.empty_cache()
+    import gc
+    gc.collect()
 
     import os
     os.environ['PYTORCH_CUDA_ALLOC_CONF'] = 'expandable_segments:True,garbage_collection_threshold:0.8'
-
+    torch.backends.cudnn.benchmark = True
+    torch.set_float32_matmul_precision('medium')
     
 
 
@@ -541,7 +575,7 @@ if __name__ == "__main__":
     config = "E:\\YouTube\\Git\ldm\\config.yaml"
     # config = "/content/sd/ldm/config.yaml"
     config = load_config(config_path=config)
-    root_dir = "/content/sd/dataset/cat_dog_images"
+    # root_dir = "/content/sd/dataset/cat_dog_images"
     root_dir = "E:\\YouTube\\Git\\dataset\\cat_dog_images"
     # print("COnfig: ", config)
     
@@ -549,7 +583,8 @@ if __name__ == "__main__":
     train_dataset = ImageDataset(
                                 root_dir=root_dir,
                                 split="train",
-                                image_size=256)
+                                image_size=256,
+                                )
     
 
     val_dataset = ImageDataset(root_dir=root_dir,
@@ -558,11 +593,19 @@ if __name__ == "__main__":
     
     train_datloader = DataLoader(dataset=train_dataset,
                                batch_size=1,
-                               shuffle=True)
+                               shuffle=True,
+                                pin_memory=True,
+                                num_workers=2,
+                                persistent_workers=True,
+                                prefetch_factor=2)
     
     val_datloader = DataLoader(dataset=val_dataset,
                                batch_size=1,
-                               shuffle=True)
+                               shuffle=True,
+                                pin_memory=True,
+                                num_workers=2,
+                                persistent_workers=True,
+                                prefetch_factor=2)
 
 
     # Initialize model 
@@ -611,14 +654,39 @@ if __name__ == "__main__":
         strategy='ddp_find_unused_parameters_false'  # More efficient distributed training
     )
 
-    # Add memory management at the start of training
-    torch.cuda.empty_cache()
-    torch.backends.cudnn.benchmark = True  # Enable cuDNN auto-tuner
-    torch.backends.cuda.enable_flash_sdp(True)  # Enable FlashAttention if available
+    # # Add memory management at the start of training
+    # torch.cuda.empty_cache()
+    # torch.backends.cudnn.benchmark = True  # Enable cuDNN auto-tuner
+    # torch.backends.cuda.enable_flash_sdp(True)  # Enable FlashAttention if available
 
-    # Training 
-    trainer.fit(model, train_datloader, val_datloader)
+    # # Training 
+    # trainer.fit(model, train_datloader, val_datloader)
+    # print("Training completed!")
+
+    # Add memory monitoring
+    def print_memory():
+        print(f"Allocated: {torch.cuda.memory_allocated()/1e9:.2f}GB")
+        print(f"Reserved: {torch.cuda.memory_reserved()/1e9:.2f}GB")
+    
+    print("Memory before training:")
+    print_memory()
+    
+    try:
+        trainer.fit(model, train_datloader, val_datloader)
+    except RuntimeError as e:
+        if 'CUDA out of memory' in str(e):
+            print("Out of memory error caught! Trying recovery...")
+            torch.cuda.empty_cache()
+            gc.collect()
+            # Reduce memory usage and try again
+            model.half()
+            trainer.fit(model, train_datloader, val_datloader)
+        else:
+            raise
+    
     print("Training completed!")
+    print("Final memory stats:")
+    print_memory()
     
     
     # python -m ldm.models.diffusion.test
