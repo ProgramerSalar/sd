@@ -431,9 +431,7 @@ class DDPM(pl.LightningModule):
 class LatentDiffusion(DDPM):
     """main class"""
     def __init__(self,
-                 first_stage_config,
-                 cond_stage_config,
-                 num_timesteps_cond=None,
+                 num_timesteps_cond=1,
                  cond_stage_key="image",
                  cond_stage_trainable=False,
                  concat_mode=True,
@@ -444,15 +442,33 @@ class LatentDiffusion(DDPM):
                  *args, **kwargs):
         self.num_timesteps_cond = default(num_timesteps_cond, 1)
         self.scale_by_std = scale_by_std
-        assert self.num_timesteps_cond <= kwargs['timesteps']
+
+        print("config", kwargs)
+
+        # assert self.num_timesteps_cond <= kwargs['timesteps']
+        assert self.num_timesteps_cond <= 1000
         # for backwards compatibility after implementation of DiffusionWrapper
+
+        # Extract and handle `first_stage_config` and `cond_stage_config` locally
+        first_stage_config = kwargs.pop('first_stage_config', None)
+        cond_stage_config = kwargs.pop('cond_stage_config', None)
+
+        # cond_stage_config= kwargs['cond_stage_config']
+
+
         if conditioning_key is None:
             conditioning_key = 'concat' if concat_mode else 'crossattn'
+            
         if cond_stage_config == '__is_unconditional__':
             conditioning_key = None
+
+
         ckpt_path = kwargs.pop("ckpt_path", None)
         ignore_keys = kwargs.pop("ignore_keys", [])
+
+
         super().__init__(conditioning_key=conditioning_key, *args, **kwargs)
+
         self.concat_mode = concat_mode
         self.cond_stage_trainable = cond_stage_trainable
         self.cond_stage_key = cond_stage_key
@@ -1107,6 +1123,7 @@ class LatentDiffusion(DDPM):
         nonzero_mask = (1 - (t == 0).float()).reshape(b, *((1,) * (len(x.shape) - 1)))
 
         if return_codebook_ids:
+            raise DeprecationWarning("Support dropped. ")                                                 # --------------------------------> ERROR 
             return model_mean + nonzero_mask * (0.5 * model_log_variance).exp() * noise, logits.argmax(dim=1)
         if return_x0:
             return model_mean + nonzero_mask * (0.5 * model_log_variance).exp() * noise, x0
@@ -1514,11 +1531,11 @@ if __name__ == "__main__":
                                 persistent_workers=True,
                                 prefetch_factor=2)
 
-
+    config = config['model']['params']
     # Initialize model 
-    model = DDPM(
-                unet_config=config['model']['params']['unet_config'],
-                use_ema=False 
+    model = LatentDiffusion(
+                
+                **config
                             )
     model = model.to("cuda")
     print(model)
