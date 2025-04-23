@@ -333,18 +333,24 @@ class DDPM(pl.LightningModule):
         t = torch.randint(0, self.num_timesteps, (x.shape[0],), device=self.device).long()
         return self.p_losses(x, t, *args, **kwargs)
 
+
     def get_input(self, batch, k):
         x = batch[k]
-        if len(x.shape) == 3:
+        if x.shape[1] != 3 or x.ndim == 4:
             x = x[..., None]
-        x = rearrange(x, 'b h w c -> b c h w')
+            x = rearrange(x, 'b h w c -> b c h w')
+
+        
         x = x.to(memory_format=torch.contiguous_format).float()
         return x
+
 
     def shared_step(self, batch):
         x = self.get_input(batch, self.first_stage_key)
         loss, loss_dict = self(x)
         return loss, loss_dict
+    
+
 
     def training_step(self, batch, batch_idx):
         loss, loss_dict = self.shared_step(batch)
@@ -361,6 +367,8 @@ class DDPM(pl.LightningModule):
 
         return loss
 
+
+
     @torch.no_grad()
     def validation_step(self, batch, batch_idx):
         _, loss_dict_no_ema = self.shared_step(batch)
@@ -370,9 +378,16 @@ class DDPM(pl.LightningModule):
         self.log_dict(loss_dict_no_ema, prog_bar=False, logger=True, on_step=False, on_epoch=True)
         self.log_dict(loss_dict_ema, prog_bar=False, logger=True, on_step=False, on_epoch=True)
 
+
+
+
     def on_train_batch_end(self, *args, **kwargs):
         if self.use_ema:
             self.model_ema(self.model)
+
+
+
+
 
     def _get_rows_from_list(self, samples):
         n_imgs_per_row = len(samples)
@@ -380,6 +395,10 @@ class DDPM(pl.LightningModule):
         denoise_grid = rearrange(denoise_grid, 'b n c h w -> (b n) c h w')
         denoise_grid = make_grid(denoise_grid, nrow=n_imgs_per_row)
         return denoise_grid
+
+
+
+
 
     @torch.no_grad()
     def log_images(self, batch, N=8, n_row=2, sample=True, return_keys=None, **kwargs):
@@ -389,6 +408,8 @@ class DDPM(pl.LightningModule):
         n_row = min(x.shape[0], n_row)
         x = x.to(self.device)[:N]
         log["inputs"] = x
+
+
 
         # get diffusion row
         diffusion_row = list()
@@ -454,6 +475,8 @@ class LatentDiffusion(DDPM):
         cond_stage_config = kwargs.pop('cond_stage_config', None)
 
         # cond_stage_config= kwargs['cond_stage_config']
+        self.learning_rate = 2.0e-06
+        
 
 
         if conditioning_key is None:
@@ -1321,6 +1344,9 @@ class LatentDiffusion(DDPM):
             diffusion_grid = make_grid(diffusion_grid, nrow=diffusion_row.shape[0])
             log["diffusion_row"] = diffusion_grid
 
+
+
+
         if sample:
             # get denoise row
             with self.ema_scope("Plotting"):
@@ -1552,7 +1578,10 @@ if __name__ == "__main__":
         LearningRateMonitor(logging_interval="epoch")
     ]
 
+    # In your training script
+    torch.distributed.init_process_group(backend='gloo')  # instead of 'nccl'
 
+    
     # trainer configuration 
     trainer = Trainer(
         max_epochs=1,
@@ -1575,8 +1604,10 @@ if __name__ == "__main__":
         limit_val_batches=0.1,    # Validate on 10% of data initially
         deterministic=True,       # For reproducibility
         # amp_backend='native',
-        strategy='ddp_find_unused_parameters_false'  # More efficient distributed training
+        strategy='ddp_spawn'  # More efficient distributed training
     )
+
+
 
     # # Add memory management at the start of training
     # torch.cuda.empty_cache()
@@ -1587,6 +1618,9 @@ if __name__ == "__main__":
     # trainer.fit(model, train_datloader, val_datloader)
     # print("Training completed!")
 
+
+
+
     # Add memory monitoring
     def print_memory():
         print(f"Allocated: {torch.cuda.memory_allocated()/1e9:.2f}GB")
@@ -1595,6 +1629,9 @@ if __name__ == "__main__":
     print("Memory before training:")
     print_memory()
     
+
+
+
     try:
         trainer.fit(model, train_datloader, val_datloader)
     except RuntimeError as e:

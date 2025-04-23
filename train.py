@@ -43,34 +43,50 @@ if __name__ == "__main__":
                                 )
     
 
-    val_dataset = ImageDataset(root_dir=root_dir,
+    val_dataset = ImageDataset(
+                                root_dir=root_dir,
                                 split="val",
-                                image_size=256)
+                                image_size=256
+                                )
     
-    train_datloader = DataLoader(dataset=train_dataset,
-                               batch_size=1,
-                               shuffle=True,
+
+    
+    
+    train_datloader = DataLoader(
+                                dataset=train_dataset,
+                                batch_size=1,
+                                shuffle=True,
                                 pin_memory=True,
                                 num_workers=2,
                                 persistent_workers=True,
-                                prefetch_factor=2)
+                                prefetch_factor=2
+                                )
     
-    val_datloader = DataLoader(dataset=val_dataset,
-                               batch_size=1,
-                               shuffle=True,
+
+    
+    val_datloader = DataLoader(
+                                dataset=val_dataset,
+                                batch_size=1,
+                                shuffle=True,
                                 pin_memory=True,
                                 num_workers=2,
                                 persistent_workers=True,
-                                prefetch_factor=2)
+                                prefetch_factor=2
+                                )
+
+
+
+
 
     config = config['model']['params']
     # Initialize model 
-    model = LatentDiffusion(
-                 **config
-                    )
+    model = LatentDiffusion(**config)
     model = model.to("cuda")
     print(model)
     
+
+
+
     callbacks = [
         ModelCheckpoint(
             monitor='val/total_loss',
@@ -82,6 +98,8 @@ if __name__ == "__main__":
         ),
         LearningRateMonitor(logging_interval="epoch")
     ]
+
+
 
 
     # trainer configuration 
@@ -109,6 +127,9 @@ if __name__ == "__main__":
         strategy='ddp_find_unused_parameters_false'  # More efficient distributed training
     )
 
+
+
+
     # # Add memory management at the start of training
     # torch.cuda.empty_cache()
     # torch.backends.cudnn.benchmark = True  # Enable cuDNN auto-tuner
@@ -118,6 +139,9 @@ if __name__ == "__main__":
     # trainer.fit(model, train_datloader, val_datloader)
     # print("Training completed!")
 
+
+
+
     # Add memory monitoring
     def print_memory():
         print(f"Allocated: {torch.cuda.memory_allocated()/1e9:.2f}GB")
@@ -126,6 +150,8 @@ if __name__ == "__main__":
     print("Memory before training:")
     print_memory()
     
+
+
     try:
         trainer.fit(model, train_datloader, val_datloader)
     except RuntimeError as e:
@@ -138,6 +164,9 @@ if __name__ == "__main__":
             trainer.fit(model, train_datloader, val_datloader)
         else:
             raise
+
+
+    
     
     print("Training completed!")
     print("Final memory stats:")

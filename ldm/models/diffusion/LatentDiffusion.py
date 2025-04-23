@@ -58,6 +58,8 @@ class LatentDiffusion(pl.LightningModule):
         # print("kwargs: -------------->", kwargs['model']['params']['timesteps'])
         assert self.num_timesteps_cond <= kwargs['timesteps']
 
+        self.learning_rate = 
+
         # For backward compatibility after implementation of DiffusionWrapper 
         if conditioning_key is None:
             conditioning_key = 'concat' if concat_mode else 'crossattn'
