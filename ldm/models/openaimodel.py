@@ -99,9 +99,9 @@ class TimestepEmbedSequential(nn.Sequential, TimestepBlock):
     """
 
     def forward(self, x, emb, context=None):
-        print("X: ---->", x.shape)
-        print("emb: --->", emb.shape)
-        print("self: -----> ", self)
+        # print("X: ---->", x.shape)
+        # print("emb: --->", emb.shape)
+        # print("self: -----> ", self)
 
 
         for layer in self:
@@ -516,7 +516,7 @@ class AttentionBlock(nn.Module):
     def _forward(self, x):
         b, c, *spatial = x.shape 
         x = x.reshape(b, c, -1)
-        print("check the dtype :", x)
+        # print("check the dtype :", x)
         qkv = self.qkv(self.norm(x))
         h = self.attention(qkv)
         h = self.proj_out(h)
@@ -931,9 +931,9 @@ class UNetModel(nn.Module):
 
         # Downsampling path 
         h = x.type(self.dtype)
-        print("h:  ->", h.shape)
+        # print("h:  ->", h.shape)
         for module in self.input_blocks:
-            print("module:  ->", module)
+            # print("module:  ->", module)
             h = module(h, emb, context)
             hs.append(h)
 
@@ -945,7 +945,7 @@ class UNetModel(nn.Module):
         # Upsampling path with skip connections
         for module in self.output_blocks:
             h_skip = hs.pop()
-            print(f"Current h shape: {h.shape}, Skip connection shape: {h_skip.shape}")
+            # print(f"Current h shape: {h.shape}, Skip connection shape: {h_skip.shape}")
 
             # Resize h to match h_skip spatial dim 
             if h.shape[2:] != h_skip.shape[2:]:
@@ -995,8 +995,8 @@ if __name__ == "__main__":
 
 
     output = model(x, timestep)
-    print(f"Input shape: {x.shape}")
-    print(f"Output shape: {output.shape}")
+    # print(f"Input shape: {x.shape}")
+    # print(f"Output shape: {output.shape}")
 
 # --------------------------------------------------------------------------
 

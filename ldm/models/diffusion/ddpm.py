@@ -116,9 +116,14 @@ class DDPM(pl.LightningModule):
         self.loss_type = loss_type
 
         self.learn_logvar = learn_logvar
-        self.logvar = torch.full(fill_value=logvar_init, size=(self.num_timesteps,))
+
+        device = torch.device("cuda:0")
+        self.logvar = torch.full(fill_value=logvar_init, size=(self.num_timesteps,)).to(device)
+        print(f"what is the meaning of logvar: {self.logvar}")
+
         if self.learn_logvar:
             self.logvar = nn.Parameter(self.logvar, requires_grad=True)
+            print(f"what is the meaning of conditional logvar: {self.logvar}")
 
 
     def register_schedule(self, given_betas=None, beta_schedule="linear", timesteps=1000,
@@ -140,6 +145,8 @@ class DDPM(pl.LightningModule):
 
         to_torch = partial(torch.tensor, dtype=torch.float32)
 
+        
+
         self.register_buffer('betas', to_torch(betas))
         self.register_buffer('alphas_cumprod', to_torch(alphas_cumprod))
         self.register_buffer('alphas_cumprod_prev', to_torch(alphas_cumprod_prev))
@@ -150,6 +157,7 @@ class DDPM(pl.LightningModule):
         self.register_buffer('log_one_minus_alphas_cumprod', to_torch(np.log(1. - alphas_cumprod)))
         self.register_buffer('sqrt_recip_alphas_cumprod', to_torch(np.sqrt(1. / alphas_cumprod)))
         self.register_buffer('sqrt_recipm1_alphas_cumprod', to_torch(np.sqrt(1. / alphas_cumprod - 1)))
+
 
         # calculations for posterior q(x_{t-1} | x_t, x_0)
         posterior_variance = (1 - self.v_posterior) * betas * (1. - alphas_cumprod_prev) / (
@@ -336,12 +344,24 @@ class DDPM(pl.LightningModule):
 
     def get_input(self, batch, k):
         x = batch[k]
-        if x.shape[1] != 3 or x.ndim == 4:
-            x = x[..., None]
-            x = rearrange(x, 'b h w c -> b c h w')
+        print("shape of data: ", x.shape)
+
+        # if len(x.shape) == 5:
+        #   x = x.squeeze(-1)
+
+        # if len(x.shape) == 3:
+        #   x = x[..., None]
+
+
+        # if x.shape[1] != 3 or x.ndim == 4:
+        #     x = x[..., None]
+        
+          
+        # x = rearrange(x, 'b h w c -> b c h w')
 
         
         x = x.to(memory_format=torch.contiguous_format).float()
+        print("shape of data: ", x.shape)
         return x
 
 
@@ -521,7 +541,7 @@ class LatentDiffusion(DDPM):
 
     @rank_zero_only
     @torch.no_grad()
-    def on_train_batch_start(self, batch, batch_idx, dataloader_idx):
+    def on_train_batch_start(self, batch, batch_idx=1):
         # only for very first batch
         if self.scale_by_std and self.current_epoch == 0 and self.global_step == 0 and batch_idx == 0 and not self.restarted_from_ckpt:
             assert self.scale_factor == 1., 'rather not use custom rescaling and std-rescaling simultaneously'
@@ -586,10 +606,19 @@ class LatentDiffusion(DDPM):
         return denoise_grid
 
     def get_first_stage_encoding(self, encoder_posterior):
+
+        print(f"shape of encoder posterior: {encoder_posterior}")
+
+
         if isinstance(encoder_posterior, DiagonalGaussianDistribution):
             z = encoder_posterior.sample()
         elif isinstance(encoder_posterior, torch.Tensor):
             z = encoder_posterior
+
+        elif isinstance(encoder_posterior, tuple):
+            z = encoder_posterior[0]
+
+
         else:
             raise NotImplementedError(f"encoder_posterior of type '{type(encoder_posterior)}' not yet implemented")
         return self.scale_factor * z
@@ -922,6 +951,7 @@ class LatentDiffusion(DDPM):
             if self.shorten_cond_schedule:  # TODO: drop this option
                 tc = self.cond_ids[t].to(self.device)
                 c = self.q_sample(x_start=c, t=tc, noise=torch.randn_like(c.float()))
+        print(f"what is the meaning of t: {t}")
         return self.p_losses(x, c, t, *args, **kwargs)
 
     def _rescale_annotations(self, bboxes, crop_coordinates):  # TODO: move to dataset
@@ -1073,7 +1103,11 @@ class LatentDiffusion(DDPM):
         loss_simple = self.get_loss(model_output, target, mean=False).mean([1, 2, 3])
         loss_dict.update({f'{prefix}/loss_simple': loss_simple.mean()})
 
+        print(f"what is the meanining of logvar[t]: {self.logvar.shape}")
         logvar_t = self.logvar[t].to(self.device)
+
+
+
         loss = loss_simple / torch.exp(logvar_t) + logvar_t
         # loss = loss_simple / torch.exp(self.logvar) + self.logvar
         if self.learn_logvar:

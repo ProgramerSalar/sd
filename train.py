@@ -85,11 +85,11 @@ if __name__ == "__main__":
     print(model)
     
 
-
+    
 
     callbacks = [
         ModelCheckpoint(
-            monitor='val/total_loss',
+            monitor='val/loss',
             mode='min',
             save_top_k=3,
             dirpath="./checkpoints",
@@ -120,8 +120,8 @@ if __name__ == "__main__":
         # accumulate_grad_batches=4,  # Increased accumulation
         # enable_progress_bar=True,
         enable_model_summary=False,
-        limit_train_batches=0.1,  # Train on 10% of data initially
-        limit_val_batches=0.1,    # Validate on 10% of data initially
+        limit_train_batches=1.0,  # Train on 10% of data initially
+        limit_val_batches=1.0,    # Validate on 10% of data initially
         deterministic=True,       # For reproducibility
         # amp_backend='native',
         strategy='ddp_find_unused_parameters_false'  # More efficient distributed training
