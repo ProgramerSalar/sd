@@ -5,51 +5,6 @@ from PIL import Image
 from vae.utils.utils import load_config
 
 
-# class ImageDataset(Dataset):
-
-#     def __init__(
-#             self, 
-#             config 
-#     ):
-        
-#         self.config = config
-#         self.image_folder = config["data"]["dataset"]['image_folder']
-
-#         # get a list of all image file paths in the folder 
-#         self.image_paths = [
-#             os.path.join(self.image_folder, f) 
-#             for f in os.listdir(self.image_folder)
-#             if f.lower().endswith(tuple(config["data"]["dataset"]["extension"]))
-#         ]
-
-#         # Build transforms dynamically from config 
-#         transform_list = [
-#             transforms.Resize(config["data"]["dataset"]["image_size"]),
-#             transforms.ToTensor(),
-#             transforms.Normalize(
-#                 config["data"]["transform"]["normalize_mean"],
-#                 config["data"]["transform"]["normalize_std"]
-#             )
-#         ]
-
-#         # Add random flip if configured 
-#         if config["data"]["transform"].get("random_flip", False):
-#             transform_list.insert(1, transforms.RandomHorizontalFlip())
-
-#         self.transforms = transforms.Compose(transform_list)
-
-#     def __len__(self):
-#         return len(self.image_paths)
-
-
-#     def __getitem__(self, index):
-        
-#         image_path = self.image_paths[index]
-#         image = Image.open(image_path).convert("RGB")
-#         image = self.transforms(image)
-#         return image 
-    
-
 
 
 
